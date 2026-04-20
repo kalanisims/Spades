@@ -144,26 +144,221 @@
                         <div style={{ display: "flex", paddingLeft: "20px" }}>{hands[2].map((_, i) => <Card key={i} faceDown small overlap />)}</div>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-around", fontSize: "0.8rem" }}>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Spades Mobile</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100dvh; overflow: hidden; background: #0d2010; font-family: 'Georgia', serif; }
+        #root { height: 100%; }
+        .hand-container { display: flex; justify-content: center; width: 100%; padding: 0 10px; box-sizing: border-box; }
+        /* This creates the overlap so 13 cards fit on one line */
+        .card-wrapper { margin-left: -22px; transition: transform 0.2s; }
+        .card-wrapper:first-child { margin-left: 0; }
+        .card-wrapper:active { transform: translateY(-15px); z-index: 100 !important; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+
+        const SUITS = ["♠", "♥", "♦", "♣"];
+        const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+        const RANK_VAL = Object.fromEntries(RANKS.map((r, i) => [r, i]));
+        const PLAYERS = ["You", "West", "Partner", "East"];
+
+        const buildDeck = () => {
+            const d = [];
+            for (const s of SUITS) for (const r of RANKS) d.push({ suit: s, rank: r });
+            return d;
+        };
+
+        const shuffle = (arr) => {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        };
+
+        const cardVal = (card) => RANK_VAL[card.rank];
+        const isSpade = (c) => c.suit === "♠";
+        const suitColor = (s) => (s === "♥" || s === "♦" ? "#e05b5b" : "#e8e0d4");
+
+        function Card({ card, onClick, selected, disabled, small, faceDown }) {
+            const width = small ? 32 : 45;
+            const height = small ? 46 : 65;
+            const col = faceDown ? null : suitColor(card.suit);
+
+            return (
+                <div onClick={!disabled ? onClick : undefined} style={{
+                    width, height, borderRadius: 4, 
+                    background: faceDown ? "linear-gradient(135deg,#1a3a5c,#0d2035)" : (selected ? "#fffde0" : "#faf5ec"),
+                    border: faceDown ? "1px solid #2a5a8c" : (selected ? "2px solid #f0c040" : "1px solid #c8b89a"),
+                    display: "flex", flexDirection: "column", padding: "2px",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.4)",
+                    transform: selected ? "translateY(-12px)" : "none",
+                    zIndex: selected ? 100 : "auto", cursor: "pointer", userSelect: "none",
+                    boxSizing: "border-box"
+                }}>
+                    {!faceDown && (
+                        <div style={{ color: col, fontSize: small ? 10 : 12, fontWeight: "bold", lineHeight: 1 }}>
+                            {card.rank}<br/>{card.suit}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        function SpadesGame() {
+            const [phase, setPhase] = useState("menu");
+            const [hands, setHands] = useState([[], [], [], []]);
+            const [bids, setBids] = useState([0, 0, 0, 0]);
+            const [currentBidder, setCurrentBidder] = useState(0);
+            const [trick, setTrick] = useState([]);
+            const [currentPlayer, setCurrentPlayer] = useState(0);
+            const [spadesBroken, setSpadesBroken] = useState(false);
+            const [tricksWon, setTricksWon] = useState([0, 0, 0, 0]);
+            const [totalScores, setTotalScores] = useState([0, 0]);
+            const [selectedCard, setSelectedCard] = useState(null);
+            const [showHelp, setShowHelp] = useState(false);
+
+            const dealRound = () => {
+                const deck = shuffle(buildDeck());
+                const h = [[], [], [], []];
+                deck.forEach((c, i) => h[i % 4].push(c));
+                h.forEach(hand => hand.sort((a, b) => SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit) || cardVal(a) - cardVal(b)));
+                setHands(h);
+                setBids([0, 0, 0, 0]);
+                setTrick([]);
+                setSpadesBroken(false);
+                setTricksWon([0, 0, 0, 0]);
+                setPhase("bid");
+                setCurrentBidder(0);
+            };
+
+            const playCard = (pIdx, card) => {
+                const nextTrick = [...trick, { player: pIdx, card }];
+                setHands(h => h.map((hand, i) => i === pIdx ? hand.filter(c => c !== card) : hand));
+                setTrick(nextTrick);
+                setSpadesBroken(prev => prev || isSpade(card));
+                setSelectedCard(null);
+
+                if (nextTrick.length === 4) {
+                    setTimeout(() => {
+                        let winEntry = nextTrick[0];
+                        const led = nextTrick[0].card.suit;
+                        nextTrick.forEach(t => {
+                            const c = t.card; const w = winEntry.card;
+                            if ((isSpade(c) && !isSpade(w)) || (c.suit === w.suit && cardVal(c) > cardVal(w)) || (c.suit === led && w.suit !== led && !isSpade(w))) {
+                                winEntry = t;
+                            }
+                        });
+                        const newTricks = [...tricksWon]; newTricks[winEntry.player]++;
+                        setTricksWon(newTricks);
+                        setTrick([]);
+                        if (hands[0].length === 1 && pIdx === 0) setPhase("roundEnd");
+                        else setCurrentPlayer(winEntry.player);
+                    }, 800);
+                } else setCurrentPlayer((pIdx + 1) % 4);
+            };
+
+            const HelpModal = () => (
+                <div style={{position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20}} onClick={()=>setShowHelp(false)}>
+                    <div style={{background:"#0f2a18", border:"2px solid #2a6a3a", borderRadius:12, padding:20, color:"#e8dfc8", maxWidth:400}} onClick={e=>e.stopPropagation()}>
+                        <h2 style={{textAlign:"center", color:"#6dda8a", marginTop:0}}>Rules</h2>
+                        <ul style={{fontSize:13, lineHeight:1.5}}>
+                            <li><b>Bidding:</b> Guess how many tricks you'll win.</li>
+                            <li><b>Winning:</b> Spades (♠) are trump cards.</li>
+                            <li><b>Leading:</b> You must follow the lead suit if you have it.</li>
+                            <li><b>Bags:</b> Taking more tricks than you bid adds "bags". 10 bags = -100 points.</li>
+                        </ul>
+                        <button onClick={()=>setShowHelp(false)} style={{width:"100%", padding:10, background:"#2a7a4a", color:"white", border:"none", borderRadius:4}}>Close</button>
+                    </div>
+                </div>
+            );
+
+            const containerStyle = {
+                height: "100dvh", width: "100vw", background: "radial-gradient(circle, #1e5c38 0%, #11331f 100%)",
+                display: "flex", flexDirection: "column", overflow: "hidden", touchAction: "none",
+                fontFamily: "serif", color: "#e8dfc8", boxSizing: "border-box"
+            };
+
+            if (phase === "menu") return (
+                <div style={containerStyle}>
+                    {showHelp && <HelpModal />}
+                    <div style={{ margin: "auto", textAlign: "center" }}>
+                        <h1 style={{ fontSize: "3.5rem", marginBottom: 10 }}>SPADES</h1>
+                        <button onClick={dealRound} style={{ padding: "12px 50px", fontSize: "1.2rem", background: "#2a7a4a", color: "white", border: "none", borderRadius: "8px", marginBottom: 10 }}>PLAY</button><br/>
+                        <button onClick={()=>setShowHelp(true)} style={{ background: "none", border: "none", color: "#8ab89a", textDecoration: "underline" }}>How to Play</button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div style={containerStyle}>
+                    {showHelp && <HelpModal />}
+                    {/* Top Partner */}
+                    <div style={{ height: "60px", display: "flex", justifyContent: "center", alignItems: "center" }}>
+                        <div className="hand-container">
+                            {hands[2].map((_, i) => <div key={i} className="card-wrapper" style={{zIndex: i}}><Card faceDown small /></div>)}
+                        </div>
+                    </div>
+
+                    {/* Stats */}
+                    <div style={{ display: "flex", justifyContent: "space-around", fontSize: "0.75rem", background: "rgba(0,0,0,0.2)", padding: "5px 0" }}>
+                        <div onClick={()=>setShowHelp(true)}>RULES ℹ️</div>
                         <div>Us: {totalScores[0]} (B:{bids[0]+bids[2]} W:{tricksWon[0]+tricksWon[2]})</div>
                         <div>Them: {totalScores[1]} (B:{bids[1]+bids[3]} W:{tricksWon[1]+tricksWon[3]})</div>
                     </div>
+
+                    {/* Play Field */}
                     <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)" }}>
+                            <div style={{display:"flex", flexDirection:"column"}}>{hands[1].slice(0,5).map((_,i)=><div key={i} style={{marginTop:-30}}><Card faceDown small /></div>)}</div>
+                        </div>
+                        
                         <div style={{ width: "100px", height: "100px", position: "relative" }}>
                             {trick.map((t, i) => (
-                                <div key={i} style={{ position: "absolute", ...[{bottom:-20,left:"50%",transform:"translateX(-50%)"},{left:-20,top:"50%",transform:"translateY(-50%)"},{top:-20,left:"50%",transform:"translateX(-50%)"},{right:-20,top:"50%",transform:"translateY(-50%)"}][t.player] }}>
+                                <div key={i} style={{ position: "absolute", ...[{bottom:-10,left:"50%",transform:"translateX(-50%)"},{left:-10,top:"50%",transform:"translateY(-50%)"},{top:-10,left:"50%",transform:"translateX(-50%)"},{right:-10,top:"50%",transform:"translateY(-50%)"}][t.player] }}>
                                     <Card card={t.card} small />
                                 </div>
                             ))}
                         </div>
+
+                        <div style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)" }}>
+                            <div style={{display:"flex", flexDirection:"column"}}>{hands[3].slice(0,5).map((_,i)=><div key={i} style={{marginTop:-30}}><Card faceDown small /></div>)}</div>
+                        </div>
                     </div>
-                    <div style={{ height: "120px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
-                        {phase === "bid" && currentBidder === 0 ? (
-                            <div style={{ display: "flex", gap: "6px" }}>
-                                {[1,2,3,4,5].map(n => <button key={n} onClick={()=>{setBids(b=>{const nb=[...b];nb[0]=n;return nb;});setCurrentBidder(1);setPhase("play");}} style={{ width: "40px", height: "40px", borderRadius: "50%" }}>{n}</button>)}
+
+                    <div style={{ height: "30px", textAlign: "center", fontSize: "0.8rem", color: "#6dda8a" }}>
+                        {phase === "play" && currentPlayer === 0 ? "Your Turn" : ""}
+                    </div>
+
+                    {/* Player Hand */}
+                    <div style={{ height: "130px", background: "rgba(0,0,0,0.1)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+                        {phase === "bid" ? (
+                            <div style={{ textAlign: "center" }}>
+                                <div style={{fontSize:12, marginBottom:5}}>Bid for the round:</div>
+                                <div style={{ display: "flex", gap: "5px", justifyContent: "center" }}>
+                                    {[1,2,3,4,5].map(n => <button key={n} onClick={()=>{setBids(b=>{const nb=[...b];nb[0]=n;return nb;});setCurrentBidder(1);setPhase("play");}} style={{ width: "35px", height: "35px", borderRadius: "50%", border:"1px solid #4aaa6a", background:"#1a3a22", color:"white" }}>{n}</button>)}
+                                </div>
                             </div>
                         ) : (
-                            <div style={{ display: "flex", paddingLeft: "20px" }}>
-                                {hands[0].map((c, i) => <Card key={i} card={c} overlap selected={selectedCard===c} onClick={()=>{if(selectedCard===c)playCard(0,c);else setSelectedCard(c);}} />)}
+                            <div className="hand-container">
+                                {hands[0].map((c, i) => (
+                                    <div key={i} className="card-wrapper" style={{zIndex: i}}>
+                                        <Card card={c} selected={selectedCard===c} onClick={()=>{if(selectedCard===c)playCard(0,c);else setSelectedCard(c);}} />
+                                    </div>
+                                ))}
                             </div>
                         )}
                     </div>
