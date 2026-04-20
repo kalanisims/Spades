@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Spades</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #0d2010; }
+        #root { height: 100%; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback, useRef } = React;
+
+        const SUITS = ["♠", "♥", "♦", "♣"];
+        const RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+        const RANK_VAL = Object.fromEntries(RANKS.map((r, i) => [r, i]));
+        const PLAYERS = ["You", "West", "Partner", "East"];
+
+        const buildDeck = () => {
+            const d = [];
+            for (const s of SUITS) for (const r of RANKS) d.push({ suit: s, rank: r });
+            return d;
+        };
+
+        const shuffle = (arr) => {
+            const a = [...arr];
+            for (let i = a.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [a[i], a[j]] = [a[j], a[i]];
+            }
+            return a;
+        };
+
+        const cardVal = (card) => RANK_VAL[card.rank];
+        const isSpade = (c) => c.suit === "♠";
+        const suitColor = (s) => (s === "♥" || s === "♦" ? "#e05b5b" : "#e8e0d4");
+
+        function Card({ card, onClick, selected, disabled, small, faceDown, overlap }) {
+            const width = small ? 32 : 48;
+            const height = small ? 46 : 68;
+            if (faceDown) {
+                return (
+                    <div style={{
+                        width, height, borderRadius: 4, background: "linear-gradient(135deg,#1a3a5c,#0d2035)",
+                        border: "1px solid #2a5a8c", marginLeft: overlap ? "-18px" : "0", boxShadow: "0 1px 3px rgba(0,0,0,0.5)"
+                    }} />
+                );
+            }
+            const col = suitColor(card.suit);
+            return (
+                <div onClick={!disabled ? onClick : undefined} style={{
+                    width, height, borderRadius: 4, background: selected ? "#fffde0" : "#faf5ec",
+                    border: selected ? "2px solid #f0c040" : "1px solid #c8b89a",
+                    display: "flex", flexDirection: "column", padding: "2px",
+                    boxShadow: selected ? "0 0 8px #f0c040" : "0 1px 3px rgba(0,0,0,0.3)",
+                    transform: selected ? "translateY(-8px)" : "none",
+                    transition: "transform 0.1s", marginLeft: overlap ? "-20px" : "0",
+                    zIndex: selected ? 100 : "auto", cursor: "pointer", userSelect: "none"
+                }}>
+                    <div style={{ color: col, fontSize: small ? 10 : 12, fontWeight: "bold", lineHeight: 1 }}>
+                        {card.rank}<br/>{card.suit}
+                    </div>
+                </div>
+            );
+        }
+
+        function SpadesGame() {
+            const [phase, setPhase] = useState("menu");
+            const [hands, setHands] = useState([[], [], [], []]);
+            const [bids, setBids] = useState([0, 0, 0, 0]);
+            const [currentBidder, setCurrentBidder] = useState(0);
+            const [trick, setTrick] = useState([]);
+            const [currentPlayer, setCurrentPlayer] = useState(0);
+            const [spadesBroken, setSpadesBroken] = useState(false);
+            const [tricksWon, setTricksWon] = useState([0, 0, 0, 0]);
+            const [totalScores, setTotalScores] = useState([0, 0]);
+            const [selectedCard, setSelectedCard] = useState(null);
+
+            const dealRound = () => {
+                const deck = shuffle(buildDeck());
+                const h = [[], [], [], []];
+                deck.forEach((c, i) => h[i % 4].push(c));
+                h.forEach(hand => hand.sort((a, b) => SUITS.indexOf(a.suit) - SUITS.indexOf(b.suit) || cardVal(a) - cardVal(b)));
+                setHands(h);
+                setBids([0, 0, 0, 0]);
+                setTrick([]);
+                setSpadesBroken(false);
+                setTricksWon([0, 0, 0, 0]);
+                setPhase("bid");
+                setCurrentBidder(0);
+            };
+
+            const playCard = (pIdx, card) => {
+                const nextTrick = [...trick, { player: pIdx, card }];
+                setHands(h => h.map((hand, i) => i === pIdx ? hand.filter(c => c !== card) : hand));
+                setTrick(nextTrick);
+                setSpadesBroken(prev => prev || isSpade(card));
+                setSelectedCard(null);
+
+                if (nextTrick.length === 4) {
+                    setTimeout(() => {
+                        let winEntry = nextTrick[0];
+                        const led = nextTrick[0].card.suit;
+                        nextTrick.forEach(t => {
+                            const c = t.card; const w = winEntry.card;
+                            if ((isSpade(c) && !isSpade(w)) || (c.suit === w.suit && cardVal(c) > cardVal(w)) || (c.suit === led && w.suit !== led && !isSpade(w))) {
+                                winEntry = t;
+                            }
+                        });
+                        const newTricks = [...tricksWon]; newTricks[winEntry.player]++;
+                        setTricksWon(newTricks);
+                        setTrick([]);
+                        if (hands[0].length === 1 && pIdx === 0) setPhase("roundEnd");
+                        else setCurrentPlayer(winEntry.player);
+                    }, 800);
+                } else setCurrentPlayer((pIdx + 1) % 4);
+            };
+
+            const containerStyle = {
+                height: "100dvh", width: "100vw", background: "radial-gradient(circle, #1e5c38 0%, #11331f 100%)",
+                display: "flex", flexDirection: "column", overflow: "hidden", touchAction: "none",
+                fontFamily: "serif", color: "#e8dfc8", boxSizing: "border-box", padding: "8px"
+            };
+
+            if (phase === "menu") return (
+                <div style={containerStyle}>
+                    <div style={{ margin: "auto", textAlign: "center" }}>
+                        <h1 style={{ fontSize: "3rem" }}>SPADES</h1>
+                        <button onClick={dealRound} style={{ padding: "12px 40px", background: "#2a7a4a", color: "white", border: "none", borderRadius: "8px" }}>DEAL</button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div style={containerStyle}>
+                    <div style={{ height: "60px", display: "flex", justifyContent: "center" }}>
+                        <div style={{ display: "flex", paddingLeft: "20px" }}>{hands[2].map((_, i) => <Card key={i} faceDown small overlap />)}</div>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-around", fontSize: "0.8rem" }}>
+                        <div>Us: {totalScores[0]} (B:{bids[0]+bids[2]} W:{tricksWon[0]+tricksWon[2]})</div>
+                        <div>Them: {totalScores[1]} (B:{bids[1]+bids[3]} W:{tricksWon[1]+tricksWon[3]})</div>
+                    </div>
+                    <div style={{ flex: 1, position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ width: "100px", height: "100px", position: "relative" }}>
+                            {trick.map((t, i) => (
+                                <div key={i} style={{ position: "absolute", ...[{bottom:-20,left:"50%",transform:"translateX(-50%)"},{left:-20,top:"50%",transform:"translateY(-50%)"},{top:-20,left:"50%",transform:"translateX(-50%)"},{right:-20,top:"50%",transform:"translateY(-50%)"}][t.player] }}>
+                                    <Card card={t.card} small />
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <div style={{ height: "120px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end" }}>
+                        {phase === "bid" && currentBidder === 0 ? (
+                            <div style={{ display: "flex", gap: "6px" }}>
+                                {[1,2,3,4,5].map(n => <button key={n} onClick={()=>{setBids(b=>{const nb=[...b];nb[0]=n;return nb;});setCurrentBidder(1);setPhase("play");}} style={{ width: "40px", height: "40px", borderRadius: "50%" }}>{n}</button>)}
+                            </div>
+                        ) : (
+                            <div style={{ display: "flex", paddingLeft: "20px" }}>
+                                {hands[0].map((c, i) => <Card key={i} card={c} overlap selected={selectedCard===c} onClick={()=>{if(selectedCard===c)playCard(0,c);else setSelectedCard(c);}} />)}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SpadesGame />);
+    </script>
+</body>
+</html>
